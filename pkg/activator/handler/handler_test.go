@@ -28,6 +28,7 @@ import (
 	"github.com/google/go-cmp/cmp/cmpopts"
 	. "github.com/knative/pkg/logging/testing"
 	"github.com/knative/serving/pkg/activator"
+	"github.com/knative/serving/pkg/activator/config"
 	"github.com/knative/serving/pkg/activator/util"
 	"github.com/knative/serving/pkg/apis/serving"
 	"github.com/knative/serving/pkg/apis/serving/v1alpha1"
@@ -361,6 +362,7 @@ func TestActivationHandler(t *testing.T) {
 			resp := httptest.NewRecorder()
 
 			req := httptest.NewRequest(http.MethodPost, "http://example.com", nil)
+			req = req.WithContext(config.ToContext(req.Context(), newConfig()))
 			req.Header.Set(activator.RevisionHeaderNamespace, e.namespace)
 			req.Header.Set(activator.RevisionHeaderName, e.name)
 
@@ -455,6 +457,7 @@ func TestActivationHandler_ProxyHeader(t *testing.T) {
 
 	writer := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "http://example.com", nil)
+	req = req.WithContext(config.ToContext(req.Context(), newConfig()))
 	req.Header.Set(activator.RevisionHeaderNamespace, namespace)
 	req.Header.Set(activator.RevisionHeaderName, revName)
 	handler.ServeHTTP(writer, req)
@@ -476,6 +479,7 @@ func sendRequests(count int, namespace, revName string, respCh chan *httptest.Re
 		go func() {
 			resp := httptest.NewRecorder()
 			req := httptest.NewRequest(http.MethodPost, "http://example.com", nil)
+			req = req.WithContext(config.ToContext(req.Context(), newConfig()))
 			req.Header.Set(activator.RevisionHeaderNamespace, namespace)
 			req.Header.Set(activator.RevisionHeaderName, revName)
 			handler.ServeHTTP(resp, req)
@@ -652,4 +656,10 @@ func (f *fakeReporter) ReportResponseTime(ns, service, config, rev string, respo
 	})
 
 	return nil
+}
+
+func newConfig() *config.Config {
+	return &config.Config{
+		Tracing: &tracingconfig.Config{},
+	}
 }

@@ -32,34 +32,60 @@ const (
 	zipkinCollectorEndpointKey = "zipkin-collector-endpoint"
 	debugKey                   = "debug"
 	sampleRateKey              = "sample-rate"
+	kubeResourceTracingKey     = "kube-resource-tracing"
 )
 
 // Config holds the configuration for tracers
 type Config struct {
-	Enable      bool
-	EndpointURL string
-	Debug       bool
-	SampleRate  float64
+	Enable              bool
+	EndpointURL         string
+	Debug               bool
+	SampleRate          float64
+	KubeResourceTracing bool
 }
 
 // Equals returns true if two Configs are identical
 func (cfg *Config) Equals(other *Config) bool {
-	return other.Enable == cfg.Enable && other.EndpointURL == cfg.EndpointURL && other.Debug == cfg.Debug && other.SampleRate == cfg.SampleRate
+	return other.Enable == cfg.Enable && other.EndpointURL == cfg.EndpointURL && other.Debug == cfg.Debug && other.SampleRate == cfg.SampleRate && other.KubeResourceTracing == cfg.KubeResourceTracing
+}
+
+func (cfg *Config) DoKubeResourceTracing() bool {
+	return cfg.Enable && cfg.KubeResourceTracing
 }
 
 // NewTracingConfigFromMap returns a Config given a map corresponding to a ConfigMap
 func NewTracingConfigFromMap(cfgMap map[string]string) (*Config, error) {
 	tc := Config{
-		Enable:     false,
-		Debug:      false,
-		SampleRate: 0.1,
+		Enable:              false,
+		Debug:               false,
+		SampleRate:          0.1,
+		KubeResourceTracing: false,
 	}
-	if enable, ok := cfgMap[enableKey]; ok {
-		enableBool, err := strconv.ParseBool(enable)
-		if err != nil {
-			return nil, fmt.Errorf("Failed parsing tracing config %q: %v", enableKey, err)
+
+	for _, co := range []struct {
+		name string
+		dest *bool
+		key  string
+	}{{
+		name: "enable",
+		dest: &tc.Enable,
+		key:  enableKey,
+	}, {
+		name: "debug",
+		dest: &tc.Debug,
+		key:  debugKey,
+	}, {
+		name: "kube resource tracing",
+		dest: &tc.KubeResourceTracing,
+		key:  kubeResourceTracingKey,
+	}} {
+		if val, ok := cfgMap[co.key]; ok {
+			valBool, err := strconv.ParseBool(val)
+			if err != nil {
+				return nil, fmt.Errorf("Failed parsing tracing config %q: %v", co.key, err)
+			}
+			*co.dest = valBool
 		}
-		tc.Enable = enableBool
 	}
 
 	if endpoint, ok := cfgMap[zipkinCollectorEndpointKey]; !ok {
@@ -68,14 +94,6 @@ func NewTracingConfigFromMap(cfgMap map[string]string) (*Config, error) {
 		}
 	} else {
 		tc.EndpointURL = endpoint
-	}
-
-	if debug, ok := cfgMap[debugKey]; ok {
-		debugBool, err := strconv.ParseBool(debug)
-		if err != nil {
-			return nil, fmt.Errorf("Failed parsing tracing config %q", debugKey)
-		}
-		tc.Debug = debugBool
 	}
 
 	if sampleRate, ok := cfgMap[sampleRateKey]; ok {

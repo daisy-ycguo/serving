@@ -24,6 +24,7 @@ import (
 
 	"github.com/knative/pkg/logging/logkey"
 	"github.com/knative/serving/pkg/activator"
+	"github.com/knative/serving/pkg/activator/config"
 	"github.com/knative/serving/pkg/activator/util"
 	"github.com/knative/serving/pkg/apis/serving"
 	"github.com/knative/serving/pkg/apis/serving/v1alpha1"
@@ -38,17 +39,20 @@ import (
 	"go.uber.org/zap"
 	v1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/kubernetes"
 )
 
 // ActivationHandler will wait for an active endpoint for a revision
 // to be available before proxing the request
 type ActivationHandler struct {
-	Logger    *zap.SugaredLogger
-	Transport http.RoundTripper
-	Reporter  activator.StatsReporter
-	Throttler *activator.Throttler
-	TRGetter  tracing.TracerRefGetter
+	Logger     *zap.SugaredLogger
+	Transport  http.RoundTripper
+	Reporter   activator.StatsReporter
+	Throttler  *activator.Throttler
+	TRGetter   tracing.TracerRefGetter
+	KubeClient kubernetes.Interface
 
 	// GetProbeCount is the number of attempts we should
 	// make to network probe the queue-proxy after the revision becomes
@@ -65,12 +69,31 @@ func (a *ActivationHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	name := pkghttp.LastHeaderValue(r.Header, activator.RevisionHeaderName)
 	start := time.Now()
 	revID := activator.RevisionID{Namespace: namespace, Name: name}
+	config := config.FromContext(r.Context())
 
 	logger := a.Logger.With(zap.String(logkey.Key, revID.String()))
 
 	tracerRef := a.TRGetter(r.Context())
 	defer tracerRef.Done()
 	tracer := tracerRef.Tracer
+
+	activateSpan, activeCtx := tracer.StartSpanFromContext(r.Context(), "activation_handler")
+	defer activateSpan.Finish()
+
+	// Only setup our pod trace if this span has a chance to be sampled
+	sampled := activateSpan.Context().Sampled
+	if config.Tracing.DoKubeResourceTracing() && (sampled == nil || *sampled) {
+		stopCh := make(chan struct{})
+		defer close(stopCh)
+		lo := metav1.ListOptions{LabelSelector: fmt.Sprintf("app=%s", name)}
+		watch, err := a.KubeClient.CoreV1().Pods(namespace).Watch(lo)
+		if err != nil {
+			logger.Errorw("Failed to set up pod watch for tracing", zap.Error(err))
+		} else {
+			defer watch.Stop()
+			go tracing.TracePodStartup(activeCtx, stopCh, watch.ResultChan(), tracer)
+		}
+	}
 
 	revision, err := a.GetRevision(revID)
 	if err != nil {

@@ -36,7 +36,7 @@ func FromContext(ctx context.Context) *Config {
 	return ctx.Value(cfgKey{}).(*Config)
 }
 
-func toContext(ctx context.Context, c *Config) context.Context {
+func ToContext(ctx context.Context, c *Config) context.Context {
 	return context.WithValue(ctx, cfgKey{}, c)
 }
 
@@ -61,7 +61,7 @@ func NewStore(logger configmap.Logger) *Store {
 
 // ToContext stores the configuration Store in the passed context
 func (s *Store) ToContext(ctx context.Context) context.Context {
-	return toContext(ctx, s.Load())
+	return ToContext(ctx, s.Load())
 }
 
 // Load creates a Config for this store
