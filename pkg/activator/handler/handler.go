@@ -26,6 +26,7 @@ import (
 
 	"github.com/knative/pkg/logging/logkey"
 	"github.com/knative/serving/pkg/activator"
+	"github.com/knative/serving/pkg/activator/config"
 	"github.com/knative/serving/pkg/activator/util"
 	"github.com/knative/serving/pkg/apis/networking"
 	"github.com/knative/serving/pkg/apis/serving"
@@ -33,20 +34,24 @@ import (
 	pkghttp "github.com/knative/serving/pkg/http"
 	"github.com/knative/serving/pkg/network"
 	"github.com/knative/serving/pkg/queue"
+	"github.com/knative/serving/pkg/tracing"
 
 	"go.opencensus.io/plugin/ochttp"
 	"go.opencensus.io/trace"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/kubernetes"
 )
 
 // ActivationHandler will wait for an active endpoint for a revision
 // to be available before proxing the request
 type ActivationHandler struct {
-	Logger    *zap.SugaredLogger
-	Transport http.RoundTripper
-	Reporter  activator.StatsReporter
-	Throttler *activator.Throttler
+	Logger     *zap.SugaredLogger
+	Transport  http.RoundTripper
+	Reporter   activator.StatsReporter
+	Throttler  *activator.Throttler
+	KubeClient kubernetes.Interface
 
 	// GetProbeCount is the number of attempts we should
 	// make to network probe the queue-proxy after the revision becomes
@@ -152,7 +157,24 @@ func (a *ActivationHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		Host:   host,
 	}
 
-	_, epWaitSpan := trace.StartSpan(r.Context(), "endpoint_wait")
+	epWaitCtx, epWaitSpan := trace.StartSpan(r.Context(), "endpoint_wait")
+
+	// Setup k8s resource tracking if configured and our span is sampled
+	config := config.FromContext(r.Context())
+	if config.Tracing.DoKubeResourceTracing() && epWaitSpan.SpanContext().IsSampled() {
+		lo := metav1.ListOptions{LabelSelector: fmt.Sprintf("app=%s", name)}
+		watch, err := a.KubeClient.CoreV1().Pods(namespace).Watch(lo)
+		if err != nil {
+			logger.Errorw("Failed to set up pod watch for tracing", zap.Error(err))
+		} else {
+			defer watch.Stop()
+
+			stopCh := make(chan struct{})
+			defer close(stopCh)
+
+			go tracing.TracePodStartup(epWaitCtx, stopCh, watch.ResultChan())
+		}
+	}
 	err = a.Throttler.Try(revID, func() {
 		var (
 			httpStatus int

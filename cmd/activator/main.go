@@ -287,6 +287,7 @@ func main() {
 		Logger:        logger,
 		Reporter:      reporter,
 		Throttler:     throttler,
+		KubeClient:    kubeClient,
 		GetProbeCount: maxRetries,
 		GetRevision:   revisionGetter,
 		GetSKS:        sksGetter,
