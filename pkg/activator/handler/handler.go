@@ -152,11 +152,14 @@ func (a *ActivationHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		Host:   host,
 	}
 
+	_, epWaitSpan := trace.StartSpan(r.Context(), "endpoint_wait")
 	err = a.Throttler.Try(revID, func() {
 		var (
 			httpStatus int
 			attempts   int
 		)
+
+		epWaitSpan.End()
 
 		// If a GET probe interval has been configured, then probe
 		// the queue-proxy with our network probe header until it
@@ -191,6 +194,12 @@ func (a *ActivationHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		a.Reporter.ReportResponseTime(namespace, serviceName, configurationName, name, httpStatus, duration)
 	})
 	if err != nil {
+		// Set error on our endpoint waiting span and end it
+		epWaitSpan.Annotate([]trace.Attribute{
+			trace.StringAttribute("activator.throttler.error", err.Error()),
+		}, "EndpointWait")
+		epWaitSpan.End()
+
 		if err == activator.ErrActivatorOverload {
 			http.Error(w, activator.ErrActivatorOverload.Error(), http.StatusServiceUnavailable)
 		} else {
