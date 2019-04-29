@@ -21,6 +21,22 @@ metadata:
     serving.knative.dev/release: devel
 
 data:
+  enable: "true"
+
+  # URL to zipkin collector where traces are sent.
+  zipkin-endpoint: "http://zipkin.istio-system.svc.cluster.local:9411/api/v2/spans"
+
+  # Enable zipkin debug mode. This allows all spans to be sent to the server
+  # bypassing sampling.
+  debug: "true"
+
+  # Percentage (0-1) of requests to trace
+  sample-rate: "0.1"
+
+  # Enable tracing of kubernetes resources where possible.
+  # NOTE: This can have significant performance impact
+  kube-resource-tracing: "true"
+
   _example: |
     ################################
     #                              #
@@ -37,18 +53,18 @@ data:
     # this block and unindented to actually change the configuration.
     #
     # If true we enable adding spans within our applications.
-    enable: "false"
+    enable: "true"
 
     # URL to zipkin collector where traces are sent.
     zipkin-endpoint: "http://zipkin.istio-system.svc.cluster.local:9411/api/v2/spans"
 
     # Enable zipkin debug mode. This allows all spans to be sent to the server
     # bypassing sampling.
-    debug: "false"
+    debug: "true"
 
     # Percentage (0-1) of requests to trace
     sample-rate: "0.1"
 
     # Enable tracing of kubernetes resources where possible.
     # NOTE: This can have significant performance impact
-    kube-resource-tracing: "false"
+    kube-resource-tracing: "true"

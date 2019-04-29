@@ -39,7 +39,7 @@ data:
     # Common configuration for all Knative codebase
     zap-logger-config: |
       {
-        "level": "info",
+        "level": "trace",
         "development": false,
         "outputPaths": ["stdout"],
         "errorOutputPaths": ["stderr"],
